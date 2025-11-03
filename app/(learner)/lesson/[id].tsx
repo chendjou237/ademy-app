@@ -171,7 +171,7 @@ export default function LessonViewerScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <ScrollView style={styles.content}>
         {/* Video Player */}
-        {lesson.video_url && lesson.video_status === 'ready' && (
+        {lesson.video_url && (
           <View style={styles.videoContainer}>
             <VideoPlayer
               videoId={lesson.bunny_video_id}
@@ -234,32 +234,7 @@ export default function LessonViewerScreen() {
           )}
         </Card>
 
-        {/* Video Status Info */}
-        {lesson.video_url && lesson.video_status !== 'ready' && (
-          <Card style={styles.statusCard}>
-            <AppText variant="h4" color="text" style={{ marginBottom: theme.spacing.sm }}>
-              Statut de la vidéo
-            </AppText>
-
-            {lesson.video_status === 'processing' && (
-              <AppText variant="body" color="warning">
-                La vidéo est en cours de traitement. Elle sera disponible sous peu.
-              </AppText>
-            )}
-
-            {lesson.video_status === 'error' && (
-              <AppText variant="body" color="error">
-                Une erreur est survenue lors du traitement de la vidéo.
-              </AppText>
-            )}
-
-            {!lesson.video_status && (
-              <AppText variant="body" color="textSecondary">
-                La vidéo est en attente de traitement.
-              </AppText>
-            )}
-          </Card>
-        )}
+        {/* Video Status Info - Removed since we ignore status and always show video */}
       </ScrollView>
     </SafeAreaView>
   );

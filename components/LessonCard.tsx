@@ -27,16 +27,8 @@ export const LessonCard: React.FC<LessonCardProps> = ({
   const getVideoStatus = () => {
     if (!lesson.video_url) return { text: 'Pas de vidéo', color: 'neutral' as const };
 
-    switch (lesson.video_status) {
-      case 'processing':
-        return { text: 'En traitement', color: 'warning' as const };
-      case 'ready':
-        return { text: 'Prêt', color: 'success' as const };
-      case 'error':
-        return { text: 'Erreur', color: 'error' as const };
-      default:
-        return { text: 'En attente', color: 'neutral' as const };
-    }
+    // Always show as ready if there's a video URL (ignore processing status)
+    return { text: 'Prêt', color: 'success' as const };
   };
 
   const videoStatus = getVideoStatus();

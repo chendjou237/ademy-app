@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { router } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EnrolledCourseCard } from '../../components/EnrolledCourseCard';
@@ -17,13 +18,7 @@ export default function MyCoursesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      fetchEnrollments();
-    }
-  }, [user]);
-
-  const fetchEnrollments = async () => {
+  const fetchEnrollments = useCallback(async () => {
     if (!user) return;
 
     try {
@@ -51,7 +46,13 @@ export default function MyCoursesScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      fetchEnrollments();
+    }
+  }, [user, fetchEnrollments]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -59,7 +60,15 @@ export default function MyCoursesScreen() {
   };
 
   const renderEnrollment = ({ item }: { item: Enrollment }) => (
-    <EnrolledCourseCard enrollment={item} onPress={() => {}} />
+    <EnrolledCourseCard
+      enrollment={item}
+      onPress={() => {
+        if (item.course?.id) {
+          console.log('Navigating to course:', item.course.id);
+          router.push(`/(learner)/course/${item.course.id}`);
+        }
+      }}
+    />
   );
 
   return (

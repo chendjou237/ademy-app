@@ -55,7 +55,13 @@ export default function TrainerLayout() {
         }}
       />
       <Tabs.Screen
-        name="course"
+        name="course/[id]"
+        options={{
+          href: null, // This hides it from the tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="course/[courseId]/add-lesson"
         options={{
           href: null, // This hides it from the tab bar
         }}

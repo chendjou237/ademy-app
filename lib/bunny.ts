@@ -124,9 +124,44 @@ export const deleteBunnyVideo = async (videoId: string): Promise<boolean> => {
   }
 };
 
-// Generate video playback URL
+// Check video status (based on web reference)
+export const checkVideoStatus = async (videoId: string): Promise<string> => {
+  try {
+    const response = await fetch(`${BUNNY_BASE_URL}/library/${BUNNY_LIBRARY_ID}/videos/${videoId}`, {
+      headers: {
+        'Accept': 'application/json',
+        'AccessKey': BUNNY_API_KEY,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to check video status');
+    }
+
+    const data = await response.json();
+    console.log('Video status from Bunny.net:', data.status);
+    return data.status || 'unknown';
+  } catch (error) {
+    console.error('Error checking video status:', error);
+    return 'unknown';
+  }
+};
+
+// Generate HLS video playback URL for React Native Video component
 export const getVideoPlaybackUrl = (videoId: string): string => {
-  return `https://iframe.mediadelivery.net/embed/${BUNNY_LIBRARY_ID}/${videoId}`;
+  // Use HLS streaming URL for React Native Video (based on web reference)
+  return `https://video.bunnycdn.com/play/${BUNNY_LIBRARY_ID}/${videoId}/playlist.m3u8`;
+};
+
+// Generate MP4 video playback URL as fallback
+export const getVideoPlaybackUrlMp4 = (videoId: string): string => {
+  // Use direct MP4 URL for React Native Video (based on web reference)
+  return `https://video.bunnycdn.com/play/${BUNNY_LIBRARY_ID}/${videoId}`;
+};
+
+// Generate video embed URL for WebView
+export const getBunnyEmbedUrl = (libraryId: string, videoId: string): string => {
+  return `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}?autoplay=false&preload=true`;
 };
 
 // Generate video thumbnail URL
