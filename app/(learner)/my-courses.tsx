@@ -8,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../contexts/I18nContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Enrollment, supabase } from '../../lib/supabase';
+import { demoEnrollmentService, isDemoMode } from '@/services/demoService';
 
 export default function MyCoursesScreen() {
   const { theme } = useTheme();
@@ -22,18 +23,30 @@ export default function MyCoursesScreen() {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from('enrollments')
-        .select(`
-          *,
-          course:courses(
+      let data, error;
+
+      if (isDemoMode()) {
+        // Use demo service
+        data = await demoEnrollmentService.getEnrollments(user.id);
+        error = null;
+      } else {
+        // Use Supabase
+        const result = await supabase
+          .from('enrollments')
+          .select(`
             *,
-            profiles!courses_trainer_id_fkey(full_name, avatar_url),
-            lessons(count)
-          )
-        `)
-        .eq('learner_id', user.id)
-        .order('enrolled_at', { ascending: false });
+            course:courses(
+              *,
+              profiles!courses_trainer_id_fkey(full_name, avatar_url),
+              lessons(count)
+            )
+          `)
+          .eq('learner_id', user.id)
+          .order('enrolled_at', { ascending: false });
+
+        data = result.data;
+        error = result.error;
+      }
 
       if (error) {
         console.error('Error fetching enrollments:', error);

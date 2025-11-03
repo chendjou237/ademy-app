@@ -6,6 +6,7 @@ import { AppText, Button, Card, Input } from '../../components/ui';
 import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../contexts/I18nContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { DemoCredentials } from '@/components/DemoCredentials';
 
 export default function LoginScreen() {
   const { theme } = useTheme();
@@ -15,6 +16,11 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const handleDemoCredentials = (demoEmail: string, demoPassword: string) => {
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -46,6 +52,8 @@ export default function LoginScreen() {
             Bienvenue de retour
           </AppText>
         </View>
+
+        <DemoCredentials onCredentialSelect={handleDemoCredentials} />
 
         <Card style={styles.card}>
           <Input

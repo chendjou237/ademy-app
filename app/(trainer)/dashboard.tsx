@@ -8,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../contexts/I18nContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { supabase } from '../../lib/supabase';
+import { demoStatsService, isDemoMode } from '@/services/demoService';
 
 interface DashboardStats {
   totalCourses: number;
@@ -36,52 +37,59 @@ export default function TrainerDashboardScreen() {
     if (!user) return;
 
     try {
-      // Fetch course stats
-      const { data: courses, error: coursesError } = await supabase
-        .from('courses')
-        .select('id, is_published, price')
-        .eq('trainer_id', user.id);
+      if (isDemoMode()) {
+        // Use demo service
+        const demoStats = await demoStatsService.getTrainerStats(user.id);
+        setStats(demoStats);
+      } else {
+        // Use Supabase
+        // Fetch course stats
+        const { data: courses, error: coursesError } = await supabase
+          .from('courses')
+          .select('id, is_published, price')
+          .eq('trainer_id', user.id);
 
-      if (coursesError) {
-        console.error('Error fetching courses:', coursesError);
-        return;
+        if (coursesError) {
+          console.error('Error fetching courses:', coursesError);
+          return;
+        }
+
+        // Fetch enrollment stats
+        const { data: enrollments, error: enrollmentsError } = await supabase
+          .from('enrollments')
+          .select(`
+            id,
+            course:courses!inner(
+              trainer_id,
+              price
+            )
+          `)
+          .eq('course.trainer_id', user.id);
+
+        if (enrollmentsError) {
+          console.error('Error fetching enrollments:', enrollmentsError);
+          return;
+        }
+
+        const totalCourses = courses?.length || 0;
+        const publishedCourses = courses?.filter(c => c.is_published).length || 0;
+        const totalStudents = enrollments?.length || 0;
+        const totalRevenue = enrollments?.reduce((sum, e) => {
+          const coursePrice = (e as any).course?.price || 0;
+          return sum + coursePrice;
+        }, 0) || 0;
+
+        // For now, account balance is 70% of total revenue (assuming 30% platform fee)
+        const accountBalance = Math.floor(totalRevenue * 0.7);
+
+        setStats({
+          totalCourses,
+          publishedCourses,
+          totalStudents,
+          totalRevenue,
+          accountBalance,
+        });
       }
-
-      // Fetch enrollment stats
-      const { data: enrollments, error: enrollmentsError } = await supabase
-        .from('enrollments')
-        .select(`
-          id,
-          course:courses!inner(
-            trainer_id,
-            price
-          )
-        `)
-        .eq('course.trainer_id', user.id);
-
-      if (enrollmentsError) {
-        console.error('Error fetching enrollments:', enrollmentsError);
-        return;
-      }
-
-      const totalCourses = courses?.length || 0;
-      const publishedCourses = courses?.filter(c => c.is_published).length || 0;
-      const totalStudents = enrollments?.length || 0;
-      const totalRevenue = enrollments?.reduce((sum, e) => {
-        const coursePrice = (e as any).course?.price || 0;
-        return sum + coursePrice;
-      }, 0) || 0;
-
-      // For now, account balance is 70% of total revenue (assuming 30% platform fee)
-      const accountBalance = Math.floor(totalRevenue * 0.7);
-
-      setStats({
-        totalCourses,
-        publishedCourses,
-        totalStudents,
-        totalRevenue,
-        accountBalance,
-      });
     } catch (error) {
       console.error('Error fetching stats:', error);
     } finally {

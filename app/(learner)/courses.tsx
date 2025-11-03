@@ -7,6 +7,7 @@ import { AppText, Card, Input } from '../../components/ui';
 import { useI18n } from '../../contexts/I18nContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Course, supabase } from '../../lib/supabase';
+import { demoCourseService, isDemoMode } from '@/services/demoService';
 
 export default function CoursesScreen() {
   const { theme } = useTheme();
@@ -23,15 +24,27 @@ export default function CoursesScreen() {
 
   const fetchCourses = async () => {
     try {
-      const { data, error } = await supabase
-        .from('courses')
-        .select(`
-          *,
-          profiles!courses_trainer_id_fkey(full_name, avatar_url),
-          lessons(count)
-        `)
-        .eq('is_published', true)
-        .order('created_at', { ascending: false });
+      let data, error;
+
+      if (isDemoMode()) {
+        // Use demo service
+        data = await demoCourseService.getCourses();
+        error = null;
+      } else {
+        // Use Supabase
+        const result = await supabase
+          .from('courses')
+          .select(`
+            *,
+            profiles!courses_trainer_id_fkey(full_name, avatar_url),
+            lessons(count)
+          `)
+          .eq('is_published', true)
+          .order('created_at', { ascending: false });
+
+        data = result.data;
+        error = result.error;
+      }
 
       if (error) {
         console.error('Error fetching courses:', error);

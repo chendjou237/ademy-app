@@ -2,6 +2,7 @@ import { Session, User } from '@supabase/supabase-js';
 import { router } from 'expo-router';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { Profile, supabase } from '../lib/supabase';
+import { demoAuthService, isDemoMode } from '@/services/demoService';
 
 interface AuthContextType {
   user: User | null;
@@ -30,12 +31,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       console.log('Fetching profile for user:', userId);
 
-      // Simple direct query without timeout for now
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      let data, error;
+
+      if (isDemoMode()) {
+        // Use demo service
+        data = await demoAuthService.getProfile(userId);
+        error = data ? null : { message: 'Profile not found' };
+      } else {
+        // Use Supabase
+        const result = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+        data = result.data;
+        error = result.error;
+      }
 
       if (error) {
         console.error('Error fetching profile:', error);
@@ -156,18 +167,45 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signIn = async (email: string, password: string) => {
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
 
-    // If there's an error, reset loading state
-    if (error) {
-      setLoading(false);
+    if (isDemoMode()) {
+      // Use demo service
+      const { user, error } = await demoAuthService.signIn(email, password);
+
+      if (error) {
+        setLoading(false);
+        return { error };
+      }
+
+      if (user) {
+        // Simulate session for demo mode
+        const mockSession = {
+          user: { id: user.id, email: user.email },
+        } as Session;
+
+        setSession(mockSession);
+        setUser(mockSession.user as User);
+
+        // Fetch profile
+        await fetchProfile(user.id);
+      }
+
+      return { error: null };
+    } else {
+      // Use Supabase
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      // If there's an error, reset loading state
+      if (error) {
+        setLoading(false);
+      }
+      // Let the onAuthStateChange handle navigation after profile is fetched
+
+      return { error };
     }
-    // Let the onAuthStateChange handle navigation after profile is fetched
-
-    return { error };
   };
 
   const signUp = async (email: string, password: string, fullName: string, role: 'trainer' | 'learner') => {
@@ -211,8 +249,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setLoading(true);
 
     try {
-      await supabase.auth.signOut();
-      console.log('Supabase sign out completed');
+      if (isDemoMode()) {
+        await demoAuthService.signOut();
+      } else {
+        await supabase.auth.signOut();
+      }
+      console.log('Sign out completed');
     } catch (error) {
       console.error('Error during sign out:', error);
     }
@@ -232,10 +274,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const updateProfile = async (updates: Partial<Profile>) => {
     if (!user) return { error: new Error('No user logged in') };
 
-    const { error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', user.id);
+    let error;
+
+    if (isDemoMode()) {
+      const result = await demoAuthService.updateProfile(user.id, updates);
+      error = result.error;
+    } else {
+      const result = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', user.id);
+      error = result.error;
+    }
 
     if (!error && profile) {
       setProfile({ ...profile, ...updates });

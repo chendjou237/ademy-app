@@ -1,5 +1,6 @@
+import { demoCourseService, demoEnrollmentService, isDemoMode } from '@/services/demoService';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LessonCard } from '../../../components/LessonCard';
@@ -25,23 +26,69 @@ export default function CourseDetailScreen() {
     if (id && user) {
       fetchCourseDetails();
     }
-  }, [id, user]);
+  }, [fetchCourseDetails, id, user]);
 
-  const fetchCourseDetails = async () => {
+  const fetchCourseDetails = useCallback(async () => {
     if (!user) return;
 
     try {
-      // Fetch course details
-      const { data: courseData, error: courseError } = await supabase
-        .from('courses')
-        .select(`
-          *,
-          profiles!courses_trainer_id_fkey(full_name, avatar_url),
-          enrollments(count)
-        `)
-        .eq('id', id)
-        .eq('is_published', true)
-        .single();
+      let courseData: any, lessonsData: any, enrollmentData: any;
+      let courseError: any, lessonsError: any;
+
+      if (isDemoMode()) {
+        // Use demo services
+        courseData = await demoCourseService.getCourseById(id!);
+        courseError = courseData ? null : { message: 'Course not found' };
+
+        if (courseData) {
+          lessonsData = courseData.lessons || [];
+          lessonsError = null;
+
+          // Check enrollment
+          const enrollments = await demoEnrollmentService.getEnrollments(user.id);
+          enrollmentData = enrollments.find((e: any) => e.course_id === id);
+        }
+      } else {
+        // Use Supabase
+        const courseResult = await supabase
+          .from('courses')
+          .select(`
+            *,
+            profiles!courses_trainer_id_fkey(full_name, avatar_url),
+            enrollments(count)
+          `)
+          .eq('id', id)
+          .eq('is_published', true)
+          .single();
+
+        courseData = courseResult.data;
+        courseError = courseResult.error;
+
+        if (courseData) {
+          // Fetch lessons
+          const lessonsResult = await supabase
+            .from('lessons')
+            .select('*')
+            .eq('course_id', id)
+            .order('order_index', { ascending: true });
+
+          lessonsData = lessonsResult.data;
+          lessonsError = lessonsResult.error;
+
+          // Check if user is enrolled
+          const enrollmentResult = await supabase
+            .from('enrollments')
+            .select(`
+              *,
+              lesson_progress(*)
+            `)
+            .eq('learner_id', user.id)
+            .eq('course_id', id)
+            .single();
+
+          enrollmentData = enrollmentResult.data;
+        }
+      }
 
       if (courseError) {
         console.error('Error fetching course:', courseError);
@@ -50,27 +97,9 @@ export default function CourseDetailScreen() {
         return;
       }
 
-      // Fetch lessons (only show free lessons if not enrolled)
-      const { data: lessonsData, error: lessonsError } = await supabase
-        .from('lessons')
-        .select('*')
-        .eq('course_id', id)
-        .order('order_index', { ascending: true });
-
       if (lessonsError) {
         console.error('Error fetching lessons:', lessonsError);
       }
-
-      // Check if user is enrolled
-      const { data: enrollmentData } = await supabase
-        .from('enrollments')
-        .select(`
-          *,
-          lesson_progress(*)
-        `)
-        .eq('learner_id', user.id)
-        .eq('course_id', id)
-        .single();
 
       setCourse(courseData);
       setLessons(lessonsData || []);
@@ -81,7 +110,7 @@ export default function CourseDetailScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, user]);
 
   const handleEnroll = async () => {
     if (!course || !user) return;
@@ -89,18 +118,31 @@ export default function CourseDetailScreen() {
     setEnrolling(true);
 
     try {
-      const { data, error } = await supabase
-        .from('enrollments')
-        .insert({
-          learner_id: user.id,
-          course_id: course.id,
-          progress: 0,
-        })
-        .select(`
-          *,
-          lesson_progress(*)
-        `)
-        .single();
+      let data: any, error: any;
+
+      if (isDemoMode()) {
+        // Use demo service
+        const result = await demoEnrollmentService.enrollInCourse(user.id, course.id);
+        data = result.data;
+        error = result.error;
+      } else {
+        // Use Supabase
+        const result = await supabase
+          .from('enrollments')
+          .insert({
+            learner_id: user.id,
+            course_id: course.id,
+            progress: 0,
+          })
+          .select(`
+            *,
+            lesson_progress(*)
+          `)
+          .single();
+
+        data = result.data;
+        error = result.error;
+      }
 
       if (error) {
         console.error('Error enrolling:', error);

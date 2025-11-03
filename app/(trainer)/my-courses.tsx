@@ -8,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../contexts/I18nContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Course, supabase } from '../../lib/supabase';
+import { demoCourseService, isDemoMode } from '@/services/demoService';
 
 export default function TrainerCoursesScreen() {
   const { theme } = useTheme();
@@ -22,15 +23,27 @@ export default function TrainerCoursesScreen() {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from('courses')
-        .select(`
-          *,
-          lessons(count),
-          enrollments(count)
-        `)
-        .eq('trainer_id', user.id)
-        .order('created_at', { ascending: false });
+      let data, error;
+
+      if (isDemoMode()) {
+        // Use demo service
+        data = await demoCourseService.getTrainerCourses(user.id);
+        error = null;
+      } else {
+        // Use Supabase
+        const result = await supabase
+          .from('courses')
+          .select(`
+            *,
+            lessons(count),
+            enrollments(count)
+          `)
+          .eq('trainer_id', user.id)
+          .order('created_at', { ascending: false });
+
+        data = result.data;
+        error = result.error;
+      }
 
       if (error) {
         console.error('Error fetching courses:', error);

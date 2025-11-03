@@ -1,12 +1,13 @@
+import { useTheme } from '@/contexts/ThemeContext';
+import { demoCourseService, isDemoMode } from '@/services/demoService';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LessonCard } from '../../../components/LessonCard';
 import { AppText, Badge, Button, Card } from '../../../components/ui';
 import { useI18n } from '../../../contexts/I18nContext';
 import { Course, Lesson, supabase } from '../../../lib/supabase';
-import { useTheme } from '@/contexts/ThemeContext';
 
 export default function CourseDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -23,33 +24,55 @@ export default function CourseDetailScreen() {
     if (id) {
       fetchCourseDetails();
     }
-  }, [ id]);
+  }, [fetchCourseDetails, id]);
 
-  const fetchCourseDetails = async () => {
+  const fetchCourseDetails = useCallback(async () => {
     try {
-      // Fetch course details
-      const { data: courseData, error: courseError } = await supabase
-        .from('courses')
-        .select(`
-          *,
-          profiles!courses_trainer_id_fkey(full_name, avatar_url),
-          enrollments(count)
-        `)
-        .eq('id', id)
-        .single();
+      let courseData: any, lessonsData: any;
+      let courseError: any, lessonsError: any;
+
+      if (isDemoMode()) {
+        // Use demo services
+        courseData = await demoCourseService.getCourseById(id!);
+        courseError = courseData ? null : { message: 'Course not found' };
+
+        if (courseData) {
+          lessonsData = courseData.lessons || [];
+          lessonsError = null;
+        }
+      } else {
+        // Use Supabase
+        const courseResult = await supabase
+          .from('courses')
+          .select(`
+            *,
+            profiles!courses_trainer_id_fkey(full_name, avatar_url),
+            enrollments(count)
+          `)
+          .eq('id', id)
+          .single();
+
+        courseData = courseResult.data;
+        courseError = courseResult.error;
+
+        if (courseData) {
+          // Fetch lessons
+          const lessonsResult = await supabase
+            .from('lessons')
+            .select('*')
+            .eq('course_id', id)
+            .order('order_index', { ascending: true });
+
+          lessonsData = lessonsResult.data;
+          lessonsError = lessonsResult.error;
+        }
+      }
 
       if (courseError) {
         console.error('Error fetching course:', courseError);
         Alert.alert('Erreur', 'Impossible de charger le cours');
         return;
       }
-
-      // Fetch lessons
-      const { data: lessonsData, error: lessonsError } = await supabase
-        .from('lessons')
-        .select('*')
-        .eq('course_id', id)
-        .order('order_index', { ascending: true });
 
       if (lessonsError) {
         console.error('Error fetching lessons:', lessonsError);
@@ -63,7 +86,7 @@ export default function CourseDetailScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   const togglePublishStatus = async () => {
     if (!course) return;

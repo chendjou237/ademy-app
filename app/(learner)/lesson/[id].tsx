@@ -1,5 +1,6 @@
+import { demoEnrollmentService, demoLessonService, isDemoMode } from '@/services/demoService';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText, Badge, Button, Card } from '../../../components/ui';
@@ -7,7 +8,17 @@ import { VideoPlayer } from '../../../components/VideoPlayer';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useI18n } from '../../../contexts/I18nContext';
 import { useTheme } from '../../../contexts/ThemeContext';
-import { Enrollment, Lesson, supabase } from '../../../lib/supabase';
+import { Course, Enrollment, Lesson, supabase } from '../../../lib/supabase';
+
+// Extended lesson type with course data
+interface LessonWithCourse extends Lesson {
+  course: Course & {
+    profiles?: {
+      full_name?: string;
+      avatar_url?: string;
+    };
+  };
+}
 
 export default function LessonViewerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -15,7 +26,7 @@ export default function LessonViewerScreen() {
   const { t } = useI18n();
   const { user } = useAuth();
 
-  const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [lesson, setLesson] = useState<LessonWithCourse | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [isCompleted, setIsCompleted] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -25,41 +36,62 @@ export default function LessonViewerScreen() {
     if (id && user) {
       fetchLessonData();
     }
-  }, [id, user]);
+  }, [ id, user]);
 
-  const fetchLessonData = async () => {
+  const fetchLessonData = useCallback(async () => {
     if (!user) return;
 
     try {
-      // Fetch lesson details
-      const { data: lessonData, error: lessonError } = await supabase
-        .from('lessons')
-        .select(`
-          *,
-          course:courses(
+      let lessonData: any, enrollmentData: any, lessonError: any, enrollmentError: any;
+
+      if (isDemoMode()) {
+        // Use demo services
+        lessonData = await demoLessonService.getLessonById(id!);
+        lessonError = lessonData ? null : { message: 'Lesson not found' };
+
+        if (lessonData) {
+          const enrollments = await demoEnrollmentService.getEnrollments(user.id);
+          enrollmentData = enrollments.find((e: any) => e.course_id === lessonData.course_id);
+          enrollmentError = enrollmentData ? null : { message: 'Not enrolled' };
+        }
+      } else {
+        // Use Supabase
+        const lessonResult = await supabase
+          .from('lessons')
+          .select(`
             *,
-            profiles!courses_trainer_id_fkey(full_name, avatar_url)
-          )
-        `)
-        .eq('id', id)
-        .single();
+            course:courses(
+              *,
+              profiles!courses_trainer_id_fkey(full_name, avatar_url)
+            )
+          `)
+          .eq('id', id)
+          .single();
+
+        lessonData = lessonResult.data;
+        lessonError = lessonResult.error;
+
+        if (lessonData) {
+          const enrollmentResult = await supabase
+            .from('enrollments')
+            .select(`
+              *,
+              lesson_progress(*)
+            `)
+            .eq('learner_id', user.id)
+            .eq('course_id', lessonData.course.id)
+            .single();
+
+          enrollmentData = enrollmentResult.data;
+          enrollmentError = enrollmentResult.error;
+        }
+      }
 
       if (lessonError) {
         console.error('Error fetching lesson:', lessonError);
         Alert.alert('Erreur', 'Impossible de charger la leçon');
         return;
       }
-
-      // Fetch enrollment and progress
-      const { data: enrollmentData, error: enrollmentError } = await supabase
-        .from('enrollments')
-        .select(`
-          *,
-          lesson_progress(*)
-        `)
-        .eq('learner_id', user.id)
-        .eq('course_id', lessonData.course.id)
-        .single();
 
       if (enrollmentError) {
         console.error('Error fetching enrollment:', enrollmentError);
@@ -69,11 +101,11 @@ export default function LessonViewerScreen() {
       }
 
       // Check if lesson is completed
-      const lessonProgress = enrollmentData.lesson_progress?.find(
+      const lessonProgress = enrollmentData?.lesson_progress?.find(
         (progress: any) => progress.lesson_id === lessonData.id
       );
 
-      setLesson(lessonData);
+      setLesson(lessonData as LessonWithCourse);
       setEnrollment(enrollmentData);
       setIsCompleted(lessonProgress?.completed || false);
     } catch (error) {
@@ -82,7 +114,7 @@ export default function LessonViewerScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, user]);
 
   const markAsComplete = async () => {
     if (!lesson || !enrollment || !user) return;
@@ -90,42 +122,57 @@ export default function LessonViewerScreen() {
     setMarkingComplete(true);
 
     try {
-      // Mark lesson as completed
-      const { error: progressError } = await supabase
-        .from('lesson_progress')
-        .upsert({
-          enrollment_id: enrollment.id,
-          lesson_id: lesson.id,
-          completed: true,
-          completed_at: new Date().toISOString(),
-        });
+      if (isDemoMode()) {
+        // Use demo service
+        const { error } = await demoEnrollmentService.updateProgress(
+          enrollment.id,
+          lesson.id,
+          true
+        );
 
-      if (progressError) {
-        console.error('Error marking lesson complete:', progressError);
-        Alert.alert('Erreur', 'Impossible de marquer la leçon comme terminée');
-        return;
+        if (error) {
+          console.error('Error marking lesson complete:', error);
+          Alert.alert('Erreur', 'Impossible de marquer la leçon comme terminée');
+          return;
+        }
+      } else {
+        // Use Supabase
+        const { error: progressError } = await supabase
+          .from('lesson_progress')
+          .upsert({
+            enrollment_id: enrollment.id,
+            lesson_id: lesson.id,
+            completed: true,
+            completed_at: new Date().toISOString(),
+          });
+
+        if (progressError) {
+          console.error('Error marking lesson complete:', progressError);
+          Alert.alert('Erreur', 'Impossible de marquer la leçon comme terminée');
+          return;
+        }
+
+        // Update course progress
+        const { data: allLessons } = await supabase
+          .from('lessons')
+          .select('id')
+          .eq('course_id', lesson.course.id);
+
+        const { data: completedLessons } = await supabase
+          .from('lesson_progress')
+          .select('lesson_id')
+          .eq('enrollment_id', enrollment.id)
+          .eq('completed', true);
+
+        const totalLessons = allLessons?.length || 0;
+        const completedCount = (completedLessons?.length || 0) + (isCompleted ? 0 : 1);
+        const progressPercentage = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
+
+        await supabase
+          .from('enrollments')
+          .update({ progress: progressPercentage })
+          .eq('id', enrollment.id);
       }
-
-      // Update course progress
-      const { data: allLessons } = await supabase
-        .from('lessons')
-        .select('id')
-        .eq('course_id', lesson.course.id);
-
-      const { data: completedLessons } = await supabase
-        .from('lesson_progress')
-        .select('lesson_id')
-        .eq('enrollment_id', enrollment.id)
-        .eq('completed', true);
-
-      const totalLessons = allLessons?.length || 0;
-      const completedCount = (completedLessons?.length || 0) + (isCompleted ? 0 : 1);
-      const progressPercentage = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
-
-      await supabase
-        .from('enrollments')
-        .update({ progress: progressPercentage })
-        .eq('id', enrollment.id);
 
       setIsCompleted(true);
       Alert.alert('Félicitations!', 'Leçon marquée comme terminée');
